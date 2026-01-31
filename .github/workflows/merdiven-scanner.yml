@@ -1,0 +1,36 @@
+name: Merdiven Hacim Taramasi 18:00
+
+on:
+  schedule:
+    # Her gün saat 18:00'de çalışır (UTC+3 = 15:00 UTC)
+    - cron: '0 15 * * 1-5'  # Pazartesi-Cuma
+  workflow_dispatch:  # Manuel çalıştırma için
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    
+    env:
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+      
+      - name: Run Merdiven Hacim Scanner
+        run: |
+          python merdiven_hacim_scanner.py
+      
+      - name: Success
+        run: |
+          echo "✅ Merdiven Hacim taraması tamamlandı ve Telegram'a gönderildi!"
