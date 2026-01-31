@@ -2,8 +2,8 @@ name: BIST Scanner 15m
 
 on:
   schedule:
-    # Her gün saat 18:30'da çalışır (UTC+3 = 15:30 UTC)
-    - cron: '30 15 * * 1-5'  # Pazartesi-Cuma
+    # Her gün saat 09:56'da çalışır (UTC+3 = 06:56 UTC)
+    - cron: '56 6 * * 1-5'  # Pazartesi-Cuma
   workflow_dispatch:  # Manuel çalıştırma için
 
 jobs:
