@@ -1,13 +1,14 @@
-name: BIST Scanner 15m
+name: BIST Scanner Hourly
 
 on:
   schedule:
-    # Her gün saat 09:56'da çalışır (UTC+3 = 06:56 UTC)
-    - cron: '56 6 * * 1-5'  # Pazartesi-Cuma
+    # Her saat başı 09:00-18:00 arası (UTC+3 = 06:00-15:00 UTC)
+    - cron: '0 6-15 * * 1-5'  # Pazartesi-Cuma
   workflow_dispatch:  # Manuel çalıştırma için
 
 jobs:
-  scan:
+  scan_15m:
+    name: 15 Dakika Taraması
     runs-on: ubuntu-latest
     
     steps:
@@ -21,12 +22,207 @@ jobs:
       
       - name: Install dependencies
         run: |
-          pip install -r requirements.txt
+          pip install pandas numpy ta requests pytz
+          pip install --upgrade --no-cache-dir git+https://github.com/rongardF/tvdatafeed.git
       
-      - name: Run BIST Scanner
+      - name: Run 15m Scanner
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          python bist_scanner_auto.py
+          python3 << 'EOF'
+          import pandas as pd
+          import numpy as np
+          import ta
+          import requests
+          from datetime import datetime
+          import pytz
+          from tvdatafeed import TvDatafeed, Interval
+          import os
+
+          # Ayarlar
+          EMA_LEN, RSI_LEN, RSI_MIN = 200, 14, 55
+          SAR_START, SAR_INC, SAR_MAX = 0.02, 0.02, 0.2
+          ATR_LEN, USE_ATR_FILTER, ATR_MIN_PCT = 14, True, 1.5
+          N_BARS = 1000
+          
+          TURKEY_TZ = pytz.timezone('Europe/Istanbul')
+          TELEGRAM_TOKEN = os.environ['TELEGRAM_TOKEN']
+          TELEGRAM_CHAT_ID = os.environ['TELEGRAM_CHAT_ID']
+          
+          symbols_str = """AICAP AKCNS AKFYE AKSA AKSEN ALARK ALBRK ALKIM ALTIN ARCLK ASELS ASUZU BIMAS BRISA BYDNR CCOLA CIMSA DOAS ECILC ECZYT EGEEN ENKAI EREGL FROTO GARAN GENIL GENTS GMTAS GUBRF HALKB IHAAS IPEKE ISCTR ISMEN KARSN KCHOL KLRHO KOZAA KOZAL KRDMDLOGO MAVI ODAS OTKAR OYAKC PETKM PGSUS SAHOL SASA SISE SKBNK SOKM TAVHL TCELL THYAO TKFEN TOASO TSKB TTKOM TUPRS TURSG VAKBN VESTL YKBNK ZRGYO"""
+          symbols = symbols_str.split()
+          
+          def send_telegram(message):
+              url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+              data = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "HTML"}
+              try:
+                  response = requests.post(url, data=data, timeout=10)
+                  return response.status_code == 200
+              except:
+                  return False
+          
+          def compute_signal(df):
+              if df is None or df.empty or len(df) < max(EMA_LEN, RSI_LEN, ATR_LEN) + 5:
+                  return None
+              df = df.copy()
+              df['ema'] = ta.trend.ema_indicator(df['close'], window=EMA_LEN)
+              sar = ta.trend.PSARIndicator(high=df['high'], low=df['low'], close=df['close'], step=SAR_START, max_step=SAR_MAX)
+              df['psar_up'] = sar.psar_up()
+              df['psar_down'] = sar.psar_down()
+              df['rsi'] = ta.momentum.rsi(df['close'], window=RSI_LEN)
+              df['atr'] = ta.volatility.average_true_range(df['high'], df['low'], df['close'], window=ATR_LEN)
+              df['atr_pct'] = (df['atr'] / df['close']) * 100
+              last = df.iloc[-1]
+              prev = df.iloc[-2]
+              sar_signal = (pd.notna(last['psar_up']) and pd.notna(prev['psar_down']))
+              price_above_ema = last['close'] > last['ema']
+              rsi_ok = last['rsi'] > RSI_MIN
+              atr_ok = last['atr_pct'] >= ATR_MIN_PCT if USE_ATR_FILTER else True
+              if sar_signal and price_above_ema and rsi_ok and atr_ok:
+                  return {'close': round(last['close'], 2), 'rsi': round(last['rsi'], 1), 'atr_pct': round(last['atr_pct'], 2)}
+              return None
+          
+          tv = TvDatafeed()
+          now = datetime.now(TURKEY_TZ)
+          date_str = now.strftime('%d.%m.%Y %H:%M')
+          
+          results = []
+          for sym in symbols:
+              try:
+                  df = tv.get_hist(symbol=sym, exchange='BIST', interval=Interval.in_15_minute, n_bars=N_BARS)
+                  info = compute_signal(df)
+                  if info:
+                      info['symbol'] = sym
+                      results.append(info)
+              except:
+                  pass
+          
+          message = f"<b>📊 BIST 15 DAKİKA TARAMA</b>\n"
+          message += f"<b>📅</b> {date_str}\n"
+          message += f"<b>🎯 Sinyal:</b> {len(results)} adet\n"
+          message += f"<b>━━━━━━━━━━━━━━━━━━</b>\n\n"
+          
+          if results:
+              for idx, r in enumerate(results[:15], 1):
+                  message += f"<b>{idx}. {r['symbol']}</b>\n"
+                  message += f"   💰 {r['close']:.2f} | RSI: {r['rsi']:.1f} | ATR: {r['atr_pct']:.2f}%\n\n"
+              if len(results) > 15:
+                  message += f"<i>...ve {len(results)-15} sinyal daha</i>\n\n"
+          else:
+              message += "<b>❌ Sinyal bulunamadı</b>\n\n"
+          
+          message += "<i>Strateji: SAR+EMA200+RSI+ATR</i>"
+          send_telegram(message)
+          print(f"✅ 15m tarama tamamlandı: {len(results)} sinyal")
+          EOF
+
+  scan_1h:
+    name: 1 Saat Taraması
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
       
-      - name: Success
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      
+      - name: Install dependencies
         run: |
-          echo "✅ Tarama tamamlandı ve Telegram'a gönderildi!"
+          pip install pandas numpy ta requests pytz
+          pip install --upgrade --no-cache-dir git+https://github.com/rongardF/tvdatafeed.git
+      
+      - name: Run 1h Scanner
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          python3 << 'EOF'
+          import pandas as pd
+          import numpy as np
+          import ta
+          import requests
+          from datetime import datetime
+          import pytz
+          from tvdatafeed import TvDatafeed, Interval
+          import os
+
+          # Ayarlar
+          EMA_LEN, RSI_LEN, RSI_MIN = 200, 14, 55
+          SAR_START, SAR_INC, SAR_MAX = 0.02, 0.02, 0.2
+          ATR_LEN, USE_ATR_FILTER, ATR_MIN_PCT = 14, True, 1.5
+          N_BARS = 1000
+          
+          TURKEY_TZ = pytz.timezone('Europe/Istanbul')
+          TELEGRAM_TOKEN = os.environ['TELEGRAM_TOKEN']
+          TELEGRAM_CHAT_ID = os.environ['TELEGRAM_CHAT_ID']
+          
+          symbols_str = """AICAP AKCNS AKFYE AKSA AKSEN ALARK ALBRK ALKIM ALTIN ARCLK ASELS ASUZU BIMAS BRISA BYDNR CCOLA CIMSA DOAS ECILC ECZYT EGEEN ENKAI EREGL FROTO GARAN GENIL GENTS GMTAS GUBRF HALKB IHAAS IPEKE ISCTR ISMEN KARSN KCHOL KLRHO KOZAA KOZAL KRDMD LOGO MAVI ODAS OTKAR OYAKC PETKM PGSUS SAHOL SASA SISE SKBNK SOKM TAVHL TCELL THYAO TKFEN TOASO TSKB TTKOM TUPRS TURSG VAKBN VESTL YKBNK ZRGYO"""
+          symbols = symbols_str.split()
+          
+          def send_telegram(message):
+              url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+              data = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "HTML"}
+              try:
+                  response = requests.post(url, data=data, timeout=10)
+                  return response.status_code == 200
+              except:
+                  return False
+          
+          def compute_signal(df):
+              if df is None or df.empty or len(df) < max(EMA_LEN, RSI_LEN, ATR_LEN) + 5:
+                  return None
+              df = df.copy()
+              df['ema'] = ta.trend.ema_indicator(df['close'], window=EMA_LEN)
+              sar = ta.trend.PSARIndicator(high=df['high'], low=df['low'], close=df['close'], step=SAR_START, max_step=SAR_MAX)
+              df['psar_up'] = sar.psar_up()
+              df['psar_down'] = sar.psar_down()
+              df['rsi'] = ta.momentum.rsi(df['close'], window=RSI_LEN)
+              df['atr'] = ta.volatility.average_true_range(df['high'], df['low'], df['close'], window=ATR_LEN)
+              df['atr_pct'] = (df['atr'] / df['close']) * 100
+              last = df.iloc[-1]
+              prev = df.iloc[-2]
+              sar_signal = (pd.notna(last['psar_up']) and pd.notna(prev['psar_down']))
+              price_above_ema = last['close'] > last['ema']
+              rsi_ok = last['rsi'] > RSI_MIN
+              atr_ok = last['atr_pct'] >= ATR_MIN_PCT if USE_ATR_FILTER else True
+              if sar_signal and price_above_ema and rsi_ok and atr_ok:
+                  return {'close': round(last['close'], 2), 'rsi': round(last['rsi'], 1), 'atr_pct': round(last['atr_pct'], 2)}
+              return None
+          
+          tv = TvDatafeed()
+          now = datetime.now(TURKEY_TZ)
+          date_str = now.strftime('%d.%m.%Y %H:%M')
+          
+          results = []
+          for sym in symbols:
+              try:
+                  df = tv.get_hist(symbol=sym, exchange='BIST', interval=Interval.in_1_hour, n_bars=N_BARS)
+                  info = compute_signal(df)
+                  if info:
+                      info['symbol'] = sym
+                      results.append(info)
+              except:
+                  pass
+          
+          message = f"<b>📊 BIST 1 SAAT TARAMA</b>\n"
+          message += f"<b>📅</b> {date_str}\n"
+          message += f"<b>🎯 Sinyal:</b> {len(results)} adet\n"
+          message += f"<b>━━━━━━━━━━━━━━━━━━</b>\n\n"
+          
+          if results:
+              for idx, r in enumerate(results[:15], 1):
+                  message += f"<b>{idx}. {r['symbol']}</b>\n"
+                  message += f"   💰 {r['close']:.2f} | RSI: {r['rsi']:.1f} | ATR: {r['atr_pct']:.2f}%\n\n"
+              if len(results) > 15:
+                  message += f"<i>...ve {len(results)-15} sinyal daha</i>\n\n"
+          else:
+              message += "<b>❌ Sinyal bulunamadı</b>\n\n"
+          
+          message += "<i>Strateji: SAR+EMA200+RSI+ATR</i>"
+          send_telegram(message)
+          print(f"✅ 1h tarama tamamlandı: {len(results)} sinyal")
+          EOF
