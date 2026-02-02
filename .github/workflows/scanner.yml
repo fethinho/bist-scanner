@@ -37,7 +37,7 @@ jobs:
           import requests
           from datetime import datetime
           import pytz
-          from tvdatafeed import TvDatafeed, Interval
+           TvDatafeed, Interval
           import os
 
           # Ayarlar
@@ -147,7 +147,7 @@ jobs:
           import requests
           from datetime import datetime
           import pytz
-          from tvdatafeed import TvDatafeed, Interval
+           TvDatafeed, Interval
           import os
 
           # Ayarlar
