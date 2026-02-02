@@ -3,7 +3,7 @@ name: BIST Scanner Hourly
 on:
   schedule:
     # Her saat başı 09:00-18:00 arası (UTC+3 = 06:00-15:00 UTC)
-    - cron: */150 6-15 * * 1-5'  # Pazartesi-Cuma
+    - cron: */1506-15 * * 1-5'  # Pazartesi-Cuma
   workflow_dispatch:  # Manuel çalıştırma için
 
 jobs:
