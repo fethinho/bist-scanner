@@ -23,10 +23,10 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
-        
-    - name: Run Merdiven Hacim Scanner
-      run: python merdiven_hacim_scanner.py
-            env:
+
+            - name: Run Merdiven Hacim Scanner
+      env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-            
+      run: python merdiven_hacim_scanner.py
+        
