@@ -26,7 +26,8 @@ EMOJI_OK = "\\u2705"
 EMOJI_NO = "\\U0001f6ab"
 EMOJI_CHART = "\\U0001f4ca"
 EMOJI_CLOCK = "\\U0001f553"
-NL = "\
+NL = "
+"
 "
 
 def now_utc3():
