@@ -140,7 +140,7 @@ def build_rapor(prob_up, btc, mkts, acc_all, pnl_all, acc_filt, pnl_filt, n_filt
         "<i>Walk-forward | 1s bar | UTC+3</i>",
         f"— created by FETHINHO"
     ]
-        return chr(10).join(lines)
+    return chr(10).join(lines)
     
 
 if __name__ == "__main__":
