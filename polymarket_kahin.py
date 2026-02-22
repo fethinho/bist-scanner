@@ -158,7 +158,7 @@ def build_rapor(prob_up, btc_price, mkts):
         f"<b>{EMOJI_NOT} Karar: {karar_al} (conf={confidence:.0%})</b>\n"
         f"{islem}\n"
         f"{sep}\n"
-        f"<i>Sonraki rapor 1 saat sonra | GitHub Actions</i>"
+                f"<i>Sonraki rapor 1 saat sonra | GitHub Actions</i>\n― <i>created by FETHİNHO</i>"
     )
     return msg
 
