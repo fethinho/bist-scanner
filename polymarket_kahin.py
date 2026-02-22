@@ -13,22 +13,20 @@ GAMMA_BASE = "https://gamma-api.polymarket.com"
 UTC3 = timezone(timedelta(hours=3))
 CONF_THRESHOLD = 0.65
 
-EMOJI_KAHIN = "\\U0001f52e"
-EMOJI_BTC = "\\U0001f4b0"
-EMOJI_ROBOT = "\\U0001f916"
-EMOJI_HEDEF = "\\U0001f3af"
-EMOJI_NOT = "\\U0001f4cb"
-EMOJI_YESIL = "\\U0001f7e2"
-EMOJI_KIRMIZI = "\\U0001f534"
-EMOJI_UP = "\\U0001f4c8"
-EMOJI_DOWN = "\\U0001f4c9"
-EMOJI_OK = "\\u2705"
-EMOJI_NO = "\\U0001f6ab"
-EMOJI_CHART = "\\U0001f4ca"
-EMOJI_CLOCK = "\\U0001f553"
-NL = "
-"
-"
+# Emoji Unicode'larini dogrudan string icinde kullan (f-string kisminda sorun olmamasi icin)
+E_KAHIN = "🔮"
+E_BTC = "💰"
+E_ROBOT = "🤖"
+E_HEDEF = "🎯"
+E_NOT = "📋"
+E_YESIL = "🟢"
+E_KIRMIZI = "🔴"
+E_UP = "📈"
+E_DOWN = "📉"
+E_OK = "✅"
+E_NO = "🚫"
+E_CHART = "📊"
+E_CLOCK = "🕒"
 
 def now_utc3():
     return datetime.now(UTC3)
@@ -111,35 +109,39 @@ def build_rapor(prob_up, btc, mkts, acc_all, pnl_all, acc_filt, pnl_filt, n_filt
     ts = now_utc3().strftime("%Y-%m-%d %H:%M UTC+3")
     sinyal = "UP" if prob_up >= 0.5 else "DOWN"
     conf = prob_up if sinyal == "UP" else (1-prob_up)
-    karar_emoji = EMOJI_UP if sinyal == "UP" else EMOJI_DOWN
-    karar_al = (EMOJI_YESIL + " AL-UP") if sinyal == "UP" else (EMOJI_KIRMIZI + " AL-DOWN")
-    islem_dur = (EMOJI_OK + " ISLEM TETIKLENDI (conf>65%)") if conf >= CONF_THRESHOLD else (EMOJI_NO + " NO-TRADE ZONU (conf&lt;65%)")
-    sep = "=" * 28
+    
+    karar_emoji = E_UP if sinyal == "UP" else E_DOWN
+    karar_al = (E_YESIL + " AL-UP") if sinyal == "UP" else (E_KIRMIZI + " AL-DOWN")
+    islem_dur = (E_OK + " ISLEM TETIKLENDI (conf>65%)") if conf >= CONF_THRESHOLD else (E_NO + " NO-TRADE ZONU (conf&lt;65%)")
+    
     fmt = lambda v: "{:.1f}%".format(v * 100)
-    msg = [
-        f"**{EMOJI_KAHIN} POLYMARKET KAHIN RAPORU**",
-        f"**{EMOJI_CLOCK} {ts}**", sep,
-        f"**{EMOJI_BTC} BTC:** `${btc:,.2f}`", "",
-        f"**{EMOJI_CHART} BACKTEST SON 48 SAAT (1s):**", "",
-        f" **Tum Sinyaller:**\
- Accuracy: `{fmt(acc_all)}` | PnL: `{pnl_all*100:+.2f}%`\
-",
-        f" **conf > 65% ({n_filt} islem):**\
- Accuracy: `{fmt(acc_filt)}` | PnL: `{pnl_filt*100:+.2f}%`\
-",
-        sep, f"**{EMOJI_ROBOT} TAHMIN (1s):**\
-{karar_emoji} **{sinyal}** Guven: `{fmt(conf)}`\
-",
-        f"**{EMOJI_HEDEF} Market:**\
-_{mkts[0].get('question','BTC')[:60] if mkts else 'N/A'}_\
-",
-        f"**{EMOJI_NOT} Karar: {karar_al}**\
-{islem_dur}\
-", sep,
-        "_Walk-forward | 1s bar | UTC+3_", "\\u2015 _created by FETHINHO_"
+    pnl_str = lambda p: ("+" if p>=0 else "") + "{:.2f}%".format(p*100)
+    
+    lines = [
+        f"<b>{E_KAHIN} POLYMARKET KAHIN RAPORU</b>",
+        f"<b>{E_CLOCK} {ts}</b>",
+        "="*25,
+        f"<b>{E_BTC} BTC:</b> <code>${btc:,.2f}</code>",
+        "",
+        f"<b>{E_CHART} BACKTEST SON 48 SAAT (1s):</b>",
+        f" • Tum Sinyaller: Acc: <code>{fmt(acc_all)}</code> | PnL: <code>{pnl_str(pnl_all)}</code>",
+        f" • conf > 65% ({n_filt}): Acc: <code>{fmt(acc_filt)}</code> | PnL: <code>{pnl_str(pnl_filt)}</code>",
+        "="*25,
+        f"<b>{E_ROBOT} TAHMIN (1s):</b>",
+        f"{karar_emoji} <b>{sinyal}</b> Guven: <code>{fmt(conf)}</code>",
+        f" UP: <code>{fmt(prob_up)}</code> | DOWN: <code>{fmt(1-prob_up)}</code>",
+        "",
+        f"<b>{E_HEDEF} Market:</b>",
+        f"<i>{mkts[0].get('question','BTC Market')[:60] if mkts else 'N/A'}</i>",
+        "",
+        f"<b>{E_NOT} Karar: {karar_al}</b>",
+        f"{islem_dur}",
+        "="*25,
+        "<i>Walk-forward | 1s bar | UTC+3</i>",
+        f"— created by FETHINHO"
     ]
-    return "\
-".join(msg)
+    return "
+".join(lines)
 
 if __name__ == "__main__":
     df = build_features(get_btc_ohlcv(interval=60))
