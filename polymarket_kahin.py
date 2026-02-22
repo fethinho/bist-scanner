@@ -145,7 +145,7 @@ def build_rapor(prob_up, btc_price, mkts,
     if confidence >= CONF_THRESHOLD:
         islem_dur = EMOJI_OK + " ISLEM TETIKLENDI (conf>60%)"
     else:
-        islem_dur = EMOJI_NO + " NO-TRADE ZONU (conf<60%)"
+        islem_dur = EMOJI_NO + " NO-TRADE ZONU (conf&lt;60%)"
 
     sep = "=" * 28
     fmt = lambda v: "{:.1f}".format(v * 100) + "%"
