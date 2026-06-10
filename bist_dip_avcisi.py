@@ -5,17 +5,18 @@ import requests
 from ta.momentum import RSIIndicator
 import warnings
 import os
-
 warnings.filterwarnings("ignore")
 
 # ============================================================
 # MONEY TRADER DİP AVCISI - BIST TARAMA
 # ============================================================
-
-TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN', '8792118863:AAFvpNIuJ5nRipxe3oHIVHkx4gIhhWuqUjA')
-TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID', '314746106')
+TELEGRAM_BOT_TOKEN = os.environ.get('TELEGRAM_BOT_TOKEN')
+TELEGRAM_CHAT_ID = os.environ.get('TELEGRAM_CHAT_ID')
 
 def send_telegram_message(message):
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        print("⚠️ TELEGRAM_BOT_TOKEN veya TELEGRAM_CHAT_ID eksik, mesaj gönderilemiyor.")
+        return
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     payload = {
         'chat_id': TELEGRAM_CHAT_ID,
@@ -25,9 +26,9 @@ def send_telegram_message(message):
     try:
         response = requests.post(url, data=payload)
         response.raise_for_status()
-        print("Message sent to Telegram successfully!")
+        print("✅ Telegram mesajı başarıyla gönderildi!")
     except requests.exceptions.RequestException as e:
-        print(f"Error sending message to Telegram: {e}")
+        print(f"❌ Telegram mesajı gönderilemedi: {e}")
 
 # BIST hisse listesi
 bist_symbols = [
@@ -80,7 +81,7 @@ bist_symbols = [
     'TIRE', 'TKFEN', 'TKNSA', 'TLMAN', 'TOASO', 'TRCAS', 'TRGYO', 'TRILC', 'TSKB', 'TSPOR',
     'TTKOM', 'TTRAK', 'TUCLK', 'TUKAS', 'TUPRS', 'TUREX', 'TURGG', 'TURSG', 'UFUK', 'ULUFA',
     'ULUSE', 'ULUUN', 'UMPAS', 'UNLU', 'USAK', 'USDTR', 'UTPYA', 'UVITE', 'VANGD', 'VBTYZ',
-    'VCspy', 'VEEZY', 'VERUS', 'VESBE', 'VESTL', 'VKFYO', 'VKING', 'VRGYO', 'WLMDI', 'YAPRK',
+    'VCSPY', 'VEEZY', 'VERUS', 'VESBE', 'VESTL', 'VKFYO', 'VKING', 'VRGYO', 'WLMDI', 'YAPRK',
     'YATAS', 'YAYLA', 'YGYO', 'YKSLN', 'YONGA', 'YUNSA', 'YYAPI', 'ZEDUR', 'ZOREN', 'ZRGYO'
 ]
 
@@ -88,7 +89,7 @@ print("============================================================")
 print("MONEY TRADER DİP AVCISI - BIST TARAMA")
 print("============================================================")
 print(f"Toplam {len(bist_symbols)} hisse taranıyor...")
-print("============================================================")
+print("============================================================\n")
 
 def get_stock_data(symbol):
     try:
@@ -108,41 +109,78 @@ def calculate_buy_zone(df):
 
 def analyze_stock(symbol):
     df = get_stock_data(symbol)
-    if df is None:
+    if df is None or len(df) < 60:
         return None
-    
+
     close = df['Close']
+    high = df['High']
+    low = df['Low']
+    open_ = df['Open']
     volume = df['Volume']
+
     current_price = close.iloc[-1]
-    
-    rsi = RSIIndicator(close=close, window=14).rsi().iloc[-1]
-    
+    prev_close = close.iloc[-2]
+
+    rsi_series = RSIIndicator(close=close, window=14).rsi()
+    rsi = rsi_series.iloc[-1]
+    prev_rsi = rsi_series.iloc[-2]
+    prev2_rsi = rsi_series.iloc[-3]
+
     avg_volume = volume.rolling(20).mean().iloc[-1]
     last_volume = volume.iloc[-1]
-    vol_ratio = last_volume / avg_volume if avg_volume > 0 else 0
-    
+    vol_ratio = last_volume / avg_volume if avg_volume and avg_volume > 0 else 0
+
+    ma10 = close.rolling(10).mean().iloc[-1]
+    ma20 = close.rolling(20).mean().iloc[-1]
+    ma50 = close.rolling(50).mean().iloc[-1]
+
+    ma20_prev = close.rolling(20).mean().iloc[-2]
+    ma50_prev = close.rolling(50).mean().iloc[-2]
+
     buy_zone_low, buy_zone_high = calculate_buy_zone(df)
     buy_zone_high2 = buy_zone_high * 1.02
-    
-    # Dip bölgesi hesaplama
-    recent_low = df['Low'].tail(10).min()
-    recent_high = df['High'].tail(10).max()
-    dip_zone_low = recent_low
-    dip_zone_high = recent_low * 1.05
-    
+
+    recent_low_10 = low.tail(10).min()
+    recent_low_5 = low.tail(5).min()
+    recent_high_10 = high.tail(10).max()
+
+    dip_zone_low = recent_low_10
+    dip_zone_high = recent_low_10 * 1.05
+
     is_buy_zone = buy_zone_low <= current_price <= buy_zone_high2
-    is_dip_zone = rsi < 42 and current_price <= dip_zone_high
-    is_strong_breakout = rsi > 50 and vol_ratio > 1.5
-    
-    # Dip dönüşü sinyali
-    prev_rsi = RSIIndicator(close=close, window=14).rsi().iloc[-2] if len(close) > 15 else rsi
-    is_dip_reversal = prev_rsi < 35 and rsi > prev_rsi and rsi < 45
-    
-    # Trend dönüşü
-    ma20 = close.rolling(20).mean().iloc[-1]
-    ma50 = close.rolling(50).mean().iloc[-1] if len(close) >= 50 else ma20
-    is_trend_reversal = current_price > ma20 and close.iloc[-2] < ma20 and vol_ratio > 2
-    
+    is_dip_zone = (rsi < 42) and (current_price <= dip_zone_high)
+    is_strong_breakout = (rsi > 55) and (vol_ratio > 1.7) and (current_price > ma20)
+
+    bullish_candle = current_price > open_.iloc[-1]
+    near_recent_dip = current_price <= recent_low_10 * 1.08
+    rsi_recovering = (prev_rsi < 35) and (rsi > prev_rsi) and (rsi > prev2_rsi)
+    price_reclaim = current_price > prev_close
+    volume_confirm = vol_ratio > 1.10
+
+    is_dip_reversal = (
+        near_recent_dip
+        and rsi_recovering
+        and bullish_candle
+        and price_reclaim
+        and volume_confirm
+    )
+
+    ma20_rising = ma20 > ma20_prev
+    ma50_rising = ma50 >= ma50_prev
+    crossed_ma20 = (prev_close < ma20_prev) and (current_price > ma20)
+    above_ma50 = current_price > ma50
+    breakout_10d = current_price > high.tail(10).iloc[:-1].max()
+    strong_trend_volume = vol_ratio > 1.30
+
+    is_trend_reversal = (
+        crossed_ma20
+        and above_ma50
+        and ma20_rising
+        and ma50_rising
+        and strong_trend_volume
+        and rsi > 50
+    )
+
     return {
         'symbol': symbol,
         'price': round(current_price, 2),
@@ -152,6 +190,9 @@ def analyze_stock(symbol):
         'buy_zone_high': round(buy_zone_high2, 2),
         'dip_zone_low': round(dip_zone_low, 2),
         'dip_zone_high': round(dip_zone_high, 2),
+        'ma10': round(ma10, 2),
+        'ma20': round(ma20, 2),
+        'ma50': round(ma50, 2),
         'is_buy_zone': is_buy_zone,
         'is_dip_zone': is_dip_zone,
         'is_strong_breakout': is_strong_breakout,
@@ -167,8 +208,7 @@ for i, symbol in enumerate(bist_symbols):
     if (i + 1) % 50 == 0:
         print(f"{i+1}/{len(bist_symbols)} hisse tamamlandı...")
 
-print(f"Toplam {len(results)} hisse başarıyla analiz edildi.")
-
+print(f"\nToplam {len(results)} hisse başarıyla analiz edildi.\n")
 df_result = pd.DataFrame(results)
 
 dip_stocks = df_result[df_result['is_dip_zone'] == True]
@@ -178,26 +218,6 @@ dip_donus = df_result[df_result['is_dip_reversal'] == True]
 trend_donus = df_result[df_result['is_trend_reversal'] == True]
 
 print("============================================================")
-print(f"🟢 DİP BÖLGESİ'NDEKİ HİSSELER ({len(dip_stocks)} hisse)")
-print("============================================================")
-if len(dip_stocks) > 0:
-    print(dip_stocks[['symbol','price','rsi','vol_ratio','buy_zone_low','buy_zone_high','dip_zone_low','dip_zone_high']].to_string(index=False))
-
-print("============================================================")
-print(f"✅ BUY ZONE'DAKİ HİSSELER ({len(buy_stocks)} hisse)")
-print("============================================================")
-if len(buy_stocks) > 0:
-    print(buy_stocks[['symbol','price','rsi','vol_ratio','buy_zone_low','buy_zone_high']].to_string(index=False))
-
-print("============================================================")
-print(f"⚡ GÜÇLÜ KIRILIM SİNYALLERİ ({len(kirilim_stocks)} hisse)")
-print("============================================================")
-if len(kirilim_stocks) > 0:
-    print(kirilim_stocks[['symbol','price','rsi','vol_ratio']].to_string(index=False))
-else:
-    print("Sinyal yok.")
-
-print("============================================================")
 print(f"🟢 DİP DÖNÜŞÜ SİNYALLERİ ({len(dip_donus)} hisse)")
 print("============================================================")
 if len(dip_donus) > 0:
@@ -205,8 +225,8 @@ if len(dip_donus) > 0:
 else:
     print("Sinyal yok.")
 
-print("============================================================")
-print(f"🟠 TREND DÖNÜŞÜ (MAJOR KIRILIM) ({len(trend_donus)} hisse)")
+print("\n============================================================")
+print(f"🟠 TREND DÖNÜŞÜ SİNYALLERİ ({len(trend_donus)} hisse)")
 print("============================================================")
 if len(trend_donus) > 0:
     print(trend_donus[['symbol','price','rsi','vol_ratio']].to_string(index=False))
@@ -214,46 +234,48 @@ else:
     print("Sinyal yok.")
 
 df_result.to_csv('bist_dip_avcisi_sonuclar.csv', index=False)
-print("💾 Tüm sonuçlar 'bist_dip_avcisi_sonuclar.csv' dosyasına kaydedildi.")
+print("\n💾 Tüm sonuçlar 'bist_dip_avcisi_sonuclar.csv' dosyasına kaydedildi.")
 
 # ============================================================
-# TELEGRAM BİLDİRİMLERİ
+# TELEGRAM BİLDİRİMLERİ - SADECE DİP VE TREND DÖNÜŞÜ
 # ============================================================
 import datetime
+
 tr_time = datetime.datetime.utcnow() + datetime.timedelta(hours=3)
 time_str = tr_time.strftime('%d.%m.%Y %H:%M')
 
 telegram_summary = f"""
 *📊 BIST DİP AVCISI TARAMA - {time_str}*
 
-*✅ Analiz edilen hisse:* {len(df_result)} hisse
-*🟢 Dip Bölgesi'nde:* {len(dip_stocks)} hisse
-*✅ Buy Zone'da:* {len(buy_stocks)} hisse
-*⚡ Güçlü Kırılım:* {len(kirilim_stocks)} hisse
 *🟢 Dip Dönüşü:* {len(dip_donus)} hisse
 *🟠 Trend Dönüşü:* {len(trend_donus)} hisse
 """
 send_telegram_message(telegram_summary)
 
-# Dip bölgesi hisselerini gönder
-if len(dip_stocks) > 0:
-    dip_msg = "*🟢 DİP BÖLGESİ HİSSELERİ:*\n"
-    for _, row in dip_stocks.iterrows():
-        dip_msg += f"• *{row['symbol']}* | Fiyat: {row['price']} | RSI: {row['rsi']}\n"
-    send_telegram_message(dip_msg)
+if len(dip_donus) > 0:
+    dip_donus_msg = "*🟢 DİP DÖNÜŞÜ SİNYALLERİ:*\n"
+    for _, row in dip_donus.sort_values(["vol_ratio", "rsi"], ascending=[False, True]).iterrows():
+        dip_donus_msg += (
+            f"• *{row['symbol']}* | "
+            f"Fiyat: {row['price']} | "
+            f"RSI: {row['rsi']} | "
+            f"Hacim: {row['vol_ratio']}x\n"
+        )
+    send_telegram_message(dip_donus_msg)
+else:
+    send_telegram_message("*🟢 DİP DÖNÜŞÜ SİNYALLERİ:* Sinyal yok.")
 
-# Buy zone hisselerini gönder
-if len(buy_stocks) > 0:
-    buy_msg = "*✅ BUY ZONE HİSSELERİ:*\n"
-    for _, row in buy_stocks.iterrows():
-        buy_msg += f"• *{row['symbol']}* | Fiyat: {row['price']} | RSI: {row['rsi']}\n"
-    send_telegram_message(buy_msg)
+if len(trend_donus) > 0:
+    trend_donus_msg = "*🟠 TREND DÖNÜŞÜ SİNYALLERİ:*\n"
+    for _, row in trend_donus.sort_values(["vol_ratio", "rsi"], ascending=[False, False]).iterrows():
+        trend_donus_msg += (
+            f"• *{row['symbol']}* | "
+            f"Fiyat: {row['price']} | "
+            f"RSI: {row['rsi']} | "
+            f"Hacim: {row['vol_ratio']}x\n"
+        )
+    send_telegram_message(trend_donus_msg)
+else:
+    send_telegram_message("*🟠 TREND DÖNÜŞÜ SİNYALLERİ:* Sinyal yok.")
 
-# Kırılım sinyalleri
-if len(kirilim_stocks) > 0:
-    kir_msg = "*⚡ GÜÇLÜ KIRILIM SİNYALLERİ:*\n"
-    for _, row in kirilim_stocks.iterrows():
-        kir_msg += f"• *{row['symbol']}* | Fiyat: {row['price']} | RSI: {row['rsi']} | Hacim: {row['vol_ratio']}x\n"
-    send_telegram_message(kir_msg)
-
-print("\n✅ Tüm Telegram mesajları gönderildi.")
+print("\n✅ Sadece dip dönüşü ve trend dönüşü Telegram mesajları gönderildi.")
